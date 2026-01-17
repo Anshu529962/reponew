@@ -1,4 +1,3 @@
-
 // lib/screens/question_screen.dart - MARROW-STYLE UI (FINAL PERFECT VERSION - TIMER FIXED)
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -10,6 +9,7 @@ import 'dart:async';
 import 'basic_review_screen.dart';  // ✅ CORRECT filename
 
 
+
 class QuestionScreen extends StatefulWidget {
   final int testId;
   final int questionNum;
@@ -17,11 +17,7 @@ class QuestionScreen extends StatefulWidget {
   final String testName;
   final int durationMinutes;
   final int remainingSeconds;
-  final String dbFile;
-
-
-
-
+  final String dbFile;  // Remove the ?
 
 
   const QuestionScreen({
@@ -35,9 +31,11 @@ class QuestionScreen extends StatefulWidget {
     required this.dbFile,
   }) : super(key: key);
 
+
   @override                       // 🔥 2. PROPER createState()
   _QuestionScreenState createState() => _QuestionScreenState();
 }
+
 
 
 class _QuestionScreenState extends State<QuestionScreen> {
@@ -52,6 +50,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
   Timer? _timer;
   bool showTimer = true;
 
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +61,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
     
     loadQuestion();
   }
+
 
   void _startTimer() {
     _timer?.cancel(); // Cancel any existing timer
@@ -76,10 +76,8 @@ class _QuestionScreenState extends State<QuestionScreen> {
         timer.cancel();
       }
     });
-    
-
-
   }
+
 
   Future<void> loadQuestion() async {
     try {
@@ -88,6 +86,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
     
     Uri.parse(ApiEndpoints.singleQuestion(widget.testId, widget.questionNum, widget.dbFile)),      headers: {'Content-Type': 'application/json'},
       );
+
 
       if (response.statusCode == 200) {
         questionData = json.decode(response.body);
@@ -106,27 +105,19 @@ class _QuestionScreenState extends State<QuestionScreen> {
     }
   }
 
+
   Future<void> toggleMark() async {
-  final response = await http.post(
-    Uri.parse(ApiEndpoints.toggleMark(widget.testId, currentQNum, widget.dbFile)),
+    final response = await http.post(
+Uri.parse(ApiEndpoints.toggleMark(widget.testId, currentQNum, widget.dbFile)),
     headers: {'Content-Type': 'application/json'},
-  );
-  
-  if (response.statusCode == 200) {
-    final data = json.decode(response.body);
-    setState(() => isMarked = data['marked']);
-    
-    // 🔥 LIVE SESSION UPDATE
-    List<dynamic> marked = session[markKey] ?? [];
-    if (isMarked) {
-      if (!marked.contains(currentQNum.toString())) marked.add(currentQNum.toString());
-    } else {
-      marked.removeWhere((q) => q == currentQNum.toString());
+    );
+
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      setState(() => isMarked = data['marked']);
     }
-    session[markKey] = marked;
-    print('🔥 MARKED: $markKey = $marked');
   }
-}
 
 
   Future<void> submitAnswer(String nav) async {
@@ -134,6 +125,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
       _showSubmitDialog();
       return;
     }
+
 
     int targetQNum = currentQNum;
     if (nav == 'next' || nav == 'skip') {
@@ -143,13 +135,14 @@ class _QuestionScreenState extends State<QuestionScreen> {
     }
 
 
-
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (context) => QuestionScreen(
 
+
           dbFile: widget.dbFile,
+
 
           testId: widget.testId,
           questionNum: targetQNum,
@@ -161,6 +154,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
       ),
     );
   }
+
 
   void _showSubmitDialog() {
     showDialog(
@@ -187,12 +181,14 @@ class _QuestionScreenState extends State<QuestionScreen> {
     );
   }
 
+
   Future<void> _submitTest() async {
     _timer?.cancel(); // Stop timer before submit
     final response = await http.post(
 Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
     headers: {'Content-Type': 'application/json'},
     );
+
 
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
@@ -208,6 +204,7 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
       );
     }
   }
+
 
   void _showTimeUpDialog() {
     showDialog(
@@ -226,11 +223,13 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
     );
   }
 
+
   @override
   void dispose() {
     _timer?.cancel();
     super.dispose();
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -241,6 +240,7 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
       );
     }
 
+
     if (error != null) {
       return Scaffold(
         backgroundColor: const Color(0xFFF5F6FA),
@@ -248,7 +248,9 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
       );
     }
 
+
     final question = questionData!['question'];
+
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
@@ -359,12 +361,15 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
     
     
 
+
                       // Options
                       ...['A', 'B', 'C', 'D'].map((opt) {
                         final optionText = question['option_${opt.toLowerCase()}']?.toString() ?? '';
                         if (optionText.isEmpty) return const SizedBox.shrink();
 
+
                         final isSelected = selectedAnswer == opt;
+
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
@@ -406,6 +411,7 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
             ),
           ),
 
+
           // 🔥 BOTTOM MENU ☰ + Next
           Container(
             padding: const EdgeInsets.all(16),
@@ -442,6 +448,7 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
     ),
   );
 }
+
 
                       else if (value == 'submit') _showSubmitDialog();
                     },
@@ -512,6 +519,7 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
       ),
     );
   }
+
 
   String _formatTime(int seconds) {
     final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
