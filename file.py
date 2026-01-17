@@ -1,4 +1,4 @@
-// lib/screens/question_screen.dart - MARROW-STYLE UI (FINAL PERFECT VERSION - TIMER FIXED)
+// lib/screens/question_screen.dart - MARROW-STYLE UI (UPDATED WITH QUESTION-STATUS API)
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -6,9 +6,7 @@ import 'dart:typed_data';
 import '../config/api_endpoints.dart';
 import 'test_results_screen.dart';
 import 'dart:async';
-import 'basic_review_screen.dart';  // ✅ CORRECT filename
-
-
+import 'basic_review_screen.dart';
 
 class QuestionScreen extends StatefulWidget {
   final int testId;
@@ -17,8 +15,7 @@ class QuestionScreen extends StatefulWidget {
   final String testName;
   final int durationMinutes;
   final int remainingSeconds;
-  final String dbFile;  // Remove the ?
-
+  final String dbFile;
 
   const QuestionScreen({
     Key? key,
@@ -27,16 +24,13 @@ class QuestionScreen extends StatefulWidget {
     required this.userId,
     required this.testName,
     required this.durationMinutes,
-    this.remainingSeconds = 0,        // 🔥 1. ADD THIS
+    this.remainingSeconds = 0,
     required this.dbFile,
   }) : super(key: key);
 
-
-  @override                       // 🔥 2. PROPER createState()
+  @override
   _QuestionScreenState createState() => _QuestionScreenState();
 }
-
-
 
 class _QuestionScreenState extends State<QuestionScreen> {
   Map<String, dynamic>? questionData;
@@ -50,21 +44,16 @@ class _QuestionScreenState extends State<QuestionScreen> {
   Timer? _timer;
   bool showTimer = true;
 
-
   @override
   void initState() {
     super.initState();
-    
-    // 🔥 FIXED: Use remaining seconds if passed, else full duration
     _timeLeft = widget.remainingSeconds > 0 ? widget.remainingSeconds : widget.durationMinutes * 60;
     _startTimer();
-    
     loadQuestion();
   }
 
-
   void _startTimer() {
-    _timer?.cancel(); // Cancel any existing timer
+    _timer?.cancel();
     _timer = Timer.periodic(Duration(seconds: 1), (timer) {
       if (mounted && _timeLeft > 0) {
         setState(() {
@@ -78,22 +67,20 @@ class _QuestionScreenState extends State<QuestionScreen> {
     });
   }
 
-
   Future<void> loadQuestion() async {
     try {
       setState(() => isLoading = true);
       final response = await http.get(
-    
-    Uri.parse(ApiEndpoints.singleQuestion(widget.testId, widget.questionNum, widget.dbFile)),      headers: {'Content-Type': 'application/json'},
+        Uri.parse(ApiEndpoints.singleQuestion(widget.testId, widget.questionNum, widget.dbFile)),
+        headers: {'Content-Type': 'application/json'},
       );
-
 
       if (response.statusCode == 200) {
         questionData = json.decode(response.body);
         currentQNum = questionData?['q_num'] ?? widget.questionNum;
         totalQuestions = questionData?['total'] ?? 0;
-        selectedAnswer = null;
-        isMarked = false;
+        selectedAnswer = questionData?['user_answer'];  // ✅ Load from backend
+        isMarked = questionData?['is_marked'] ?? false; // ✅ Load from backend
         setState(() {});
       } else {
         setState(() => error = 'Failed to load question');
@@ -105,40 +92,47 @@ class _QuestionScreenState extends State<QuestionScreen> {
     }
   }
 
+  // 🔥 NEW: Single unified API call for ALL actions
+  Future<void> updateQuestionStatus(String action, {String? answer}) async {
+    try {
+      final body = {
+        'question_id': currentQNum,
+        'action': action,
+      };
+      if (answer != null) body['answer'] = answer;
+      
+      await http.post(
+        Uri.parse(ApiEndpoints.questionStatus(widget.testId, widget.dbFile)),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(body),
+      );
+    } catch (e) {
+      print('Status update failed: $e');
+    }
+  }
+
+  // 🔥 UPDATED: Uses new unified API
   Future<void> saveAnswer(String answer) async {
-  try {
-    await http.post(
-      Uri.parse(ApiEndpoints.answerQuestion(widget.testId, currentQNum, widget.dbFile)),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'question_id': currentQNum, 'answer': answer}),
-    );
-  } catch (e) {
-    print('Save answer failed: $e');
+    setState(() => selectedAnswer = answer);
+    await updateQuestionStatus('answer', answer: answer);
   }
-}
 
-
-
+  // 🔥 UPDATED: Uses new unified API + optimistic update
   Future<void> toggleMark() async {
-  final response = await http.post(
-    Uri.parse(ApiEndpoints.toggleMark(widget.testId, currentQNum, widget.dbFile)),
-    headers: {'Content-Type': 'application/json'},
-    body: json.encode({'question_id': currentQNum}),  // 🔥 ADD BODY
-  );
-  if (response.statusCode == 200) {
-    final data = json.decode(response.body);
-    setState(() => isMarked = data['marked_questions'].contains(currentQNum));
+    setState(() => isMarked = !isMarked);
+    await updateQuestionStatus('mark');
   }
-}
-
-
 
   Future<void> submitAnswer(String nav) async {
+    // 🔥 NEW: Track skip action
+    if (nav == 'skip' && selectedAnswer == null) {
+      await updateQuestionStatus('skip');
+    }
+
     if (nav == 'submit' || (currentQNum == totalQuestions && nav != 'previous')) {
       _showSubmitDialog();
       return;
     }
-
 
     int targetQNum = currentQNum;
     if (nav == 'next' || nav == 'skip') {
@@ -147,27 +141,21 @@ class _QuestionScreenState extends State<QuestionScreen> {
       targetQNum = currentQNum - 1;
     }
 
-
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (context) => QuestionScreen(
-
-
           dbFile: widget.dbFile,
-
-
           testId: widget.testId,
           questionNum: targetQNum,
           userId: widget.userId,
           testName: widget.testName,
           durationMinutes: widget.durationMinutes,
-          remainingSeconds: _timeLeft,  // 🔥 PASS CURRENT REMAINING TIME
+          remainingSeconds: _timeLeft,
         ),
       ),
     );
   }
-
 
   void _showSubmitDialog() {
     showDialog(
@@ -194,14 +182,12 @@ class _QuestionScreenState extends State<QuestionScreen> {
     );
   }
 
-
   Future<void> _submitTest() async {
-    _timer?.cancel(); // Stop timer before submit
+    _timer?.cancel();
     final response = await http.post(
-Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
-    headers: {'Content-Type': 'application/json'},
+      Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
+      headers: {'Content-Type': 'application/json'},
     );
-
 
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
@@ -217,7 +203,6 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
       );
     }
   }
-
 
   void _showTimeUpDialog() {
     showDialog(
@@ -236,13 +221,11 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
     );
   }
 
-
   @override
   void dispose() {
     _timer?.cancel();
     super.dispose();
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -253,7 +236,6 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
       );
     }
 
-
     if (error != null) {
       return Scaffold(
         backgroundColor: const Color(0xFFF5F6FA),
@@ -261,15 +243,13 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
       );
     }
 
-
     final question = questionData!['question'];
-
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: Column(
         children: [
-          // 🔥 TOP TIMER BAR
+          // TOP TIMER BAR
           Container(
             width: double.infinity,
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -294,7 +274,7 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
             ),
           ),
           
-          // 🔥 SWIPE + MAIN CONTENT
+          // SWIPE + MAIN CONTENT
           Expanded(
             child: GestureDetector(
               onHorizontalDragEnd: (details) {
@@ -320,78 +300,70 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
                       ),
                     ],
                   ),
-                  
-                    child: Column(
-  crossAxisAlignment: CrossAxisAlignment.start,
-  children: [
-    // 🔥 IMAGE (Safe - Never breaks text below)
-    (question['images'] != null && (question['images'] as String).isNotEmpty)
-        ? Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Builder(
-                builder: (context) {
-                  try {
-                    String cleanBase64 = (question['images'] as String)
-                        .replaceAll(RegExp(r'[ \n\r\t]'), '')  // Clean whitespace
-                        .replaceAll('data:image/png;base64,', '')  // Data URL
-                        .replaceAll('data:image/jpeg;base64,', '')
-                        .trim();
-                    
-                    return Image.memory(
-                      base64Decode(cleanBase64),
-                      height: 380,
-                      width: double.infinity,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
-                      cacheWidth: 800,
-                    );
-                  } catch (e) {
-                    return Container(
-                      height: 200,  // Smaller placeholder
-                      color: Colors.grey[100],
-                      child: Icon(Icons.image_not_supported, size: 48),
-                    );
-                  }
-                },
-              ),
-            ),
-          )
-        : SizedBox.shrink(),  // 🔥 ZERO SPACE if no image
-    
-    // 🔥 TEXT (ALWAYS displays - independent of image)
-    Text(
-      question['question']?.toString() ?? 'Question not available',
-      style: const TextStyle(
-        fontSize: 18,
-        height: 1.58,
-        color: Color(0xFF222222),
-      ),
-    ),
-    
-    const SizedBox(height: 32),
-    
-    
-
-
-                      // Options
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // IMAGE (Safe - Never breaks text below)
+                      (question['images'] != null && (question['images'] as String).isNotEmpty)
+                          ? Padding(
+                              padding: const EdgeInsets.only(bottom: 24),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Builder(
+                                  builder: (context) {
+                                    try {
+                                      String cleanBase64 = (question['images'] as String)
+                                          .replaceAll(RegExp(r'[ \n\r\t]'), '')
+                                          .replaceAll('data:image/png;base64,', '')
+                                          .replaceAll('data:image/jpeg;base64,', '')
+                                          .trim();
+                                      
+                                      return Image.memory(
+                                        base64Decode(cleanBase64),
+                                        height: 380,
+                                        width: double.infinity,
+                                        fit: BoxFit.contain,
+                                        gaplessPlayback: true,
+                                        cacheWidth: 800,
+                                      );
+                                    } catch (e) {
+                                      return Container(
+                                        height: 200,
+                                        color: Colors.grey[100],
+                                        child: Icon(Icons.image_not_supported, size: 48),
+                                      );
+                                    }
+                                  },
+                                ),
+                              ),
+                            )
+                          : SizedBox.shrink(),
+                      
+                      // TEXT (ALWAYS displays - independent of image)
+                      Text(
+                        question['question']?.toString() ?? 'Question not available',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          height: 1.58,
+                          color: Color(0xFF222222),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 32),
+                      
+                      // 🔥 UPDATED: Uses new saveAnswer()
                       ...['A', 'B', 'C', 'D'].map((opt) {
                         final optionText = question['option_${opt.toLowerCase()}']?.toString() ?? '';
                         if (optionText.isEmpty) return const SizedBox.shrink();
 
-
                         final isSelected = selectedAnswer == opt;
-
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
                           child: GestureDetector(
                             onTap: () {
-                                setState(() => selectedAnswer = opt);
-                                saveAnswer(opt);  // 🔥 SAVE TO SESSION
-                              },
-
+                              saveAnswer(opt);  // 🔥 NOW USES UNIFIED API
+                            },
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                               decoration: BoxDecoration(
@@ -409,7 +381,7 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
                                   Radio(
                                     value: opt,
                                     groupValue: selectedAnswer,
-                                    onChanged: (value) => setState(() => selectedAnswer = value as String?),
+                                    onChanged: (value) => saveAnswer(value as String),  // 🔥 UPDATED
                                     activeColor: const Color(0xFF003087),
                                   ),
                                   Expanded(child: Text(optionText)),
@@ -426,8 +398,7 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
             ),
           ),
 
-
-          // 🔥 BOTTOM MENU ☰ + Next
+          // BOTTOM MENU ☰ + Next
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -449,23 +420,20 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     offset: Offset(0, 40),
                     onSelected: (value) {
-                      if (value == 'mark') toggleMark();
+                      if (value == 'mark') toggleMark();  // 🔥 NOW USES UNIFIED API
                       else if (value == 'review') {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => BasicReviewScreen(
-       testId: widget.testId,
-        userId: widget.userId,
-        dbFile: widget.dbFile,    // 🔥 THIS LINE ONLY
-    // 🔥 Pass current timer
-      ),
-    ),
-  );
-}
-
-
-                      else if (value == 'submit') _showSubmitDialog();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => BasicReviewScreen(
+                              testId: widget.testId,
+                              userId: widget.userId,
+                              dbFile: widget.dbFile,
+                              remainingSeconds: _timeLeft,  // 🔥 PASS TIMER
+                            ),
+                          ),
+                        );
+                      } else if (value == 'submit') _showSubmitDialog();
                     },
                     itemBuilder: (context) => [
                       PopupMenuItem(
@@ -534,7 +502,6 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
       ),
     );
   }
-
 
   String _formatTime(int seconds) {
     final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
