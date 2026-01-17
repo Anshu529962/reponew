@@ -1,150 +1,137 @@
-// lib/screens/review_screen.dart - FULLY FIXED FOR YOUR EXACT API
+// lib/screens/basic_review_screen.dart - MARROW-STYLE 6x6 GRID REVIEW
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:async';
 import '../config/api_endpoints.dart';
-import 'question_screen.dart';
 
-
-class ReviewScreen extends StatefulWidget {
+class BasicReviewScreen extends StatefulWidget {
   final int testId;
   final String userId;
-  final String testName;
-  final int durationMinutes;
-  final int remainingSeconds;
-  final String dbFile;  // ← ADD THIS
+  final String dbFile;
 
-
-  const ReviewScreen({
+  const BasicReviewScreen({
     Key? key,
     required this.testId,
     required this.userId,
-    required this.testName,
-    required this.durationMinutes,
-    this.remainingSeconds = 0,
-    
-   required this.dbFile,  // ← ADD THIS
+    required this.dbFile,
   }) : super(key: key);
 
-
-
   @override
-  _ReviewScreenState createState() => _ReviewScreenState();
+  _BasicReviewScreenState createState() => _BasicReviewScreenState();
 }
 
-class _ReviewScreenState extends State<ReviewScreen> {
+class _BasicReviewScreenState extends State<BasicReviewScreen> {
   List<dynamic> questions = [];
   Map<String, dynamic> answers = {};
-  List<String> marked = [];
-  List<String> skipped = [];
+  List<int> markedQuestions = [];
+  List<int> skippedQuestions = [];
+  Map<String, dynamic>? testInfo;
   bool isLoading = true;
   String? error;
-  int _timeLeft = 0;
-  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    _timeLeft = widget.remainingSeconds > 0 ? widget.remainingSeconds : widget.durationMinutes * 60;
-    _startTimer();
-    _loadReviewData();
+    loadReviewData();
   }
 
-  void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted && _timeLeft > 0) {
-        setState(() => _timeLeft--);
-      }
-      if (_timeLeft <= 0) {
-        timer.cancel();
-      }
-    });
-  }
-
-  Future<void> _loadReviewData() async {
+  Future<void> loadReviewData() async {
     try {
       setState(() => isLoading = true);
-      error = null;
-      
       final response = await http.get(
-      Uri.parse(ApiEndpoints.testReview(widget.testId, widget.dbFile)),
+        Uri.parse(ApiEndpoints.testReview(widget.testId, widget.dbFile)),
         headers: {'Content-Type': 'application/json'},
       );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data['success'] == true) {
+        setState(() {
           questions = data['questions'] ?? [];
           answers = Map<String, dynamic>.from(data['answers'] ?? {});
-          marked = List<String>.from(data['marked'] ?? []);
-          skipped = List<String>.from(data['skipped'] ?? []);
-        } else {
-          throw Exception(data['error'] ?? 'API returned error');
-        }
+          markedQuestions = List<int>.from(data['marked_questions'] ?? []);
+          skippedQuestions = List<int>.from(data['skipped_questions'] ?? []);
+          testInfo = Map<String, dynamic>.from(data['test'] ?? {});
+        });
       } else {
-        throw Exception('Server error: ${response.statusCode}');
+        setState(() => error = 'Failed to load review data');
       }
-      setState(() => isLoading = false);
     } catch (e) {
-      setState(() {
-        error = 'Failed to load review data: $e';
-        isLoading = false;
-      });
+      setState(() => error = 'Network error: $e');
+    } finally {
+      setState(() => isLoading = false);
     }
   }
 
-  String _getQuestionStatus(dynamic question) {
-    final qId = question['id']?.toString() ?? '';
-    
-    // Priority: skipped > answered+marked > answered > marked > not_visited
-    if (skipped.contains(qId)) return 'skipped';
-    if (answers.containsKey(qId)) {
-      return marked.contains(qId) ? 'marked_review' : 'answered';
+  Color _getQuestionColor(int qid) {
+    if (answers.containsKey(qid.toString())) return const Color(0xFF28A745); // ✅ GREEN - Answered
+    if (markedQuestions.contains(qid)) return const Color(0xFFFFC107);        // ⭐ YELLOW - Marked
+    if (skippedQuestions.contains(qid)) return const Color(0xFF6C757D);      // ⏭️ GREY - Skipped
+    return const Color(0xFFF8F9FA);                                          // ⚪ WHITE - Unvisited
+  }
+
+  String _getQuestionStatus(int qid) {
+    if (answers.containsKey(qid.toString())) return '✅ Answered';
+    if (markedQuestions.contains(qid)) return '⭐ Marked';
+    if (skippedQuestions.contains(qid)) return '⏭️ Skipped';
+    return '○ Unvisited';
+  }
+
+  void _navigateToQuestion(int qid) {
+    Navigator.pop(context); // Back to QuestionScreen with new questionNum
+    // QuestionScreen handles navigation via pushReplacement with targetQNum
+  }
+
+  List<Widget> _buildGrid() {
+    List<Widget> gridItems = [];
+    for (int i = 0; i < questions.length; i++) {
+      final q = questions[i];
+      final qid = q['id'] as int;
+      
+      gridItems.add(
+        GestureDetector(
+          onTap: () => _navigateToQuestion(qid),
+          child: Container(
+            margin: const EdgeInsets.all(4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+            decoration: BoxDecoration(
+              color: _getQuestionColor(qid),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Colors.black.withOpacity(0.1),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${qid}',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: _getQuestionColor(qid) == const Color(0xFFF8F9FA) 
+                        ? Colors.black87 
+                        : Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _getQuestionStatus(qid),
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: _getQuestionColor(qid) == const Color(0xFFF8F9FA) 
+                        ? Colors.black54 
+                        : Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
-    if (marked.contains(qId)) return 'marked';
-    return 'not_visited';
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'answered':
-        return const Color(0xFF003087);
-      case 'marked':
-      case 'marked_review':
-        return Colors.orange;
-      case 'skipped':
-        return const Color(0xFF6C757D);
-      default:
-        return Colors.grey;
-    }
-  }
-
-  IconData _getStatusIcon(String status) {
-    switch (status.toLowerCase()) {
-      case 'answered':
-        return Icons.check_circle;
-      case 'marked':
-      case 'marked_review':
-        return Icons.flag;
-      case 'skipped':
-        return Icons.schedule;
-      default:
-        return Icons.radio_button_unchecked;
-    }
-  }
-
-  String _formatTime(int seconds) {
-    final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
-    final secs = (seconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$secs';
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+    return gridItems;
   }
 
   @override
@@ -165,28 +152,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
             children: [
               Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
               const SizedBox(height: 16),
-              Text(error ?? 'No questions available', 
-                   style: const TextStyle(color: Colors.red, fontSize: 16),
-                   textAlign: TextAlign.center),
-              const SizedBox(height: 24),
+              Text(error ?? 'No questions found', 
+                   style: const TextStyle(color: Colors.red, fontSize: 16)),
+              const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: _loadReviewData,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF003087),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                ),
-                child: const Text('Retry'),
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Back'),
               ),
             ],
           ),
         ),
       );
     }
-
-    final answeredCount = questions.where((q) => 
-        answers.containsKey(q['id']?.toString())).length;
-    final totalQuestions = questions.length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
@@ -195,39 +172,44 @@ class _ReviewScreenState extends State<ReviewScreen> {
           // 🔥 TOP BAR
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.9),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            decoration: const BoxDecoration(
+              color: Colors.white,
               boxShadow: [
-                BoxShadow(color: Colors.black26, blurRadius: 10, offset: const Offset(0, 2))
+                BoxShadow(
+                  color: Color(0x0F000000),
+                  blurRadius: 10,
+                  offset: Offset(0, 2),
+                ),
               ],
             ),
             child: SafeArea(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Column(
                 children: [
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       IconButton(
                         onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        icon: const Icon(Icons.arrow_back, color: Color(0xFF003087)),
                       ),
                       Text(
-                        'Review (${answeredCount}/$totalQuestions)',
+                        testInfo?['name'] ?? 'Test Review',
                         style: const TextStyle(
-                          color: Colors.white,
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
+                          color: Color(0xFF003087),
                         ),
                       ),
+                      const SizedBox(width: 48), // Balance back button space
                     ],
                   ),
-                  Text(
-                    _formatTime(_timeLeft),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                  const Text(
+                    'Tap any question to review/answer',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF6C757D),
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -235,129 +217,76 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ),
           ),
 
-          // 🔥 PROGRESS BAR
+          // 🔥 PROGRESS STATS
           Container(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                LinearProgressIndicator(
-                  value: totalQuestions > 0 ? answeredCount / totalQuestions : 0,
-                  backgroundColor: Colors.grey[300],
-                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF003087)),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Completed: $answeredCount/$totalQuestions',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF222222),
-                      ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _showSubmitDialog(),
-                      icon: const Icon(Icons.assignment_turned_in, size: 18),
-                      label: const Text('Submit Test'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
+                _StatCard('Answered', answers.length, const Color(0xFF28A745)),
+                _StatCard('Marked', markedQuestions.length, const Color(0xFFFFC107)),
+                _StatCard('Skipped', skippedQuestions.length, const Color(0xFF6C757D)),
+                _StatCard('Total', questions.length, const Color(0xFF003087)),
               ],
             ),
           ),
 
-          // 🔥 QUESTIONS GRID
+          // 🔥 6x6 GRID
           Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(16),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: _getGridColumns(totalQuestions),
-                childAspectRatio: 1,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: GridView.count(
+                crossAxisCount: 6,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                children: _buildGrid(),
               ),
-              itemCount: questions.length,
-              itemBuilder: (context, index) {
-                final question = questions[index];
-                final status = _getQuestionStatus(question);
-                final qNum = index + 1;
+            ),
+          ),
 
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => QuestionScreen(
-
-                        dbFile: widget.dbFile,  // or your actual dbFile variable
-
-
-                          testId: widget.testId,
-                          questionNum: qNum,
-                          userId: widget.userId,
-                          testName: widget.testName,
-                          durationMinutes: widget.durationMinutes,
-                          remainingSeconds: _timeLeft,
-                        ),
+          // 🔥 BOTTOM ACTION BAR
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 14,
+                  offset: const Offset(0, -3),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back_ios, size: 18),
+                    label: const Text('Continue Test'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF003087),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    );
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _getStatusColor(status).withOpacity(0.4),
-                        width: 2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          _getStatusIcon(status),
-                          color: _getStatusColor(status),
-                          size: 24,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '$qNum',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: _getStatusColor(status),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          status.replaceAll('_', ' ').toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 8,
-                            fontWeight: FontWeight.w500,
-                            color: _getStatusColor(status).withOpacity(0.8),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
                     ),
                   ),
-                );
-              },
+                ),
+              ],
             ),
           ),
         ],
@@ -365,67 +294,34 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
-  int _getGridColumns(int totalQuestions) {
-    if (totalQuestions <= 16) return 4;
-    if (totalQuestions <= 25) return 5;
-    return 6;
-  }
-
-  void _showSubmitDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Submit Test'),
-        content: const Text('Are you sure you want to submit the test?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Continue'),
+  Widget _StatCard(String label, int count, Color color) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(20),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            onPressed: () {
-              Navigator.pop(context);
-              _submitTest();
-            },
-            child: const Text('Submit Test'),
+          child: Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF6C757D),
+          ),
+        ),
+      ],
     );
-  }
-
-  Future<void> _submitTest() async {
-    _timer?.cancel();
-    
-    try {
-      final response = await http.post(
-      Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        // Navigate to results screen with scores
-        Navigator.pushReplacementNamed(
-          context,
-          '/results', // Update this route as needed
-          arguments: {
-            'testId': widget.testId.toString(),
-            'scores': data['scores'],
-            'testName': widget.testName,
-          },
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Submit failed. Please try again.')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Network error: $e')),
-      );
-    }
   }
 }
