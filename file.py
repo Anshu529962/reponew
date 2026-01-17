@@ -105,19 +105,32 @@ class _QuestionScreenState extends State<QuestionScreen> {
     }
   }
 
+  Future<void> saveAnswer(String answer) async {
+  try {
+    await http.post(
+      Uri.parse(ApiEndpoints.answerQuestion(widget.testId, currentQNum, widget.dbFile)),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'question_id': currentQNum, 'answer': answer}),
+    );
+  } catch (e) {
+    print('Save answer failed: $e');
+  }
+}
+
+
 
   Future<void> toggleMark() async {
-    final response = await http.post(
-Uri.parse(ApiEndpoints.toggleMark(widget.testId, currentQNum, widget.dbFile)),
+  final response = await http.post(
+    Uri.parse(ApiEndpoints.toggleMark(widget.testId, currentQNum, widget.dbFile)),
     headers: {'Content-Type': 'application/json'},
-    );
-
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      setState(() => isMarked = data['marked']);
-    }
+    body: json.encode({'question_id': currentQNum}),  // 🔥 ADD BODY
+  );
+  if (response.statusCode == 200) {
+    final data = json.decode(response.body);
+    setState(() => isMarked = data['marked_questions'].contains(currentQNum));
   }
+}
+
 
 
   Future<void> submitAnswer(String nav) async {
@@ -375,8 +388,10 @@ Uri.parse(ApiEndpoints.submitTest(widget.testId, widget.dbFile)),
                           margin: const EdgeInsets.only(bottom: 12),
                           child: GestureDetector(
                             onTap: () {
-                              setState(() => selectedAnswer = opt);
-                            },
+                                setState(() => selectedAnswer = opt);
+                                saveAnswer(opt);  // 🔥 SAVE TO SESSION
+                              },
+
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                               decoration: BoxDecoration(
